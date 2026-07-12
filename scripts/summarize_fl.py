@@ -68,8 +68,9 @@ def plot_comparison(bars: list[tuple[str, float, float]]) -> Path:
     ax.set_xticks(list(x))
     ax.set_xticklabels(labels, rotation=15, ha="right", fontsize=8)
     ax.set_ylabel("Score")
+    ax.set_ylim(0, 0.98)
     ax.set_title("Centralized vs Federated vs Isolated (test set)")
-    ax.legend()
+    ax.legend(loc="upper center", ncol=2, framealpha=0.9)
     ax.grid(alpha=0.3, axis="y")
     for i, (a, f) in enumerate(zip(aucs, f1s)):
         ax.text(i - w / 2, a + 0.01, f"{a:.3f}", ha="center", fontsize=7)
@@ -119,8 +120,11 @@ def main() -> None:
              "| Configuration | AUC-ROC | F1 (malicious) | Recall (mal.) | FPR |",
              "|---|---|---|---|---|"]
 
+    def fmt_auc(a: float) -> str:
+        return "collapsed" if a != a else f"{a:.4f}"  # a != a detects NaN
+
     def row(name: str, m: dict) -> str:
-        return (f"| {name} | {m['auc_roc']:.4f} | {m['f1_binary']:.4f} | "
+        return (f"| {name} | {fmt_auc(m['auc_roc'])} | {m['f1_binary']:.4f} | "
                 f"{m.get('recall_binary', float('nan')):.4f} | {m['false_positive_rate']*100:.2f}% |")
 
     if cen:
@@ -141,10 +145,11 @@ def main() -> None:
     pn = load("fl_poison1_noclip_iid.json")
     pc = load("fl_poison1_clip_iid.json")
     if pn and pc and pn.get("final") and pc.get("final"):
+        pn_auc = pn['final']['auc_roc']
+        pn_txt = "collapsed the undefended global model (AUC undefined — predictions diverged to NaN)" if pn_auc != pn_auc else f"drove the undefended global model to AUC {pn_auc:.3f}"
         lines += ["", "## Poisoning robustness", "",
-                  f"A single sign-flipping client (1 of 5) drove the undefended global model to "
-                  f"AUC {pn['final']['auc_roc']:.3f}. With the SafeFedAvg gradient-norm safeguard enabled, "
-                  f"the global model held at AUC {pc['final']['auc_roc']:.3f} "
+                  f"A single sign-flipping client (1 of 5) {pn_txt}. With the SafeFedAvg gradient-norm safeguard "
+                  f"enabled, the global model held at AUC {pc['final']['auc_roc']:.3f} "
                   f"(rejecting {sum(r['rejected_updates'] for r in pc.get('history', []))} malicious updates across all rounds)."]
 
     out = METRICS / "phase3_summary.md"

@@ -206,10 +206,15 @@ def run_fedavg(
     result = RunResult(experiment=experiment, mode=mode, rounds=rounds)
     local_model = make_model(fl_config, model_config)  # reused scratch model
 
+    # SafeFedAvg cutoff: reject an update whose L2 delta-norm exceeds this multiple of
+    # the cohort median. A relative cutoff adapts to model scale; a fixed absolute
+    # threshold (the old max_grad_norm) rejected honest updates too.
+    # A 2.5x-median cutoff drops a 5x sign-flip update while keeping honest peers;
+    # retune if the assumed attack scale changes.
+    clip_factor = 2.5
+
     for rnd in range(1, rounds + 1):
-        client_weights: list[list[np.ndarray]] = []
-        sizes: list[int] = []
-        rejected = 0
+        updates: list[tuple[list[np.ndarray], int, float]] = []
         for c in clients:
             local_model.set_weights(global_weights)
             local_model.fit(
@@ -220,17 +225,21 @@ def run_fedavg(
                 verbose=0,
             )
             w = local_model.get_weights()
-            is_malicious = c.client_id < poison_clients
-            if is_malicious:
+            if c.client_id < poison_clients:
                 w = sign_flip(w, global_weights)
-            if clip and update_l2_norm(w, global_weights) > max_norm:
-                rejected += 1
-                continue  # SafeFedAvg: drop the outlier update
-            client_weights.append(w)
-            sizes.append(len(c.X))
+            updates.append((w, len(c.X), update_l2_norm(w, global_weights)))
 
-        if client_weights:
-            global_weights = weighted_average(client_weights, sizes)
+        rejected = 0
+        if clip and len(updates) >= 3:
+            norms = sorted(u[2] for u in updates)
+            median = norms[len(norms) // 2]
+            kept = [(w, s) for (w, s, n) in updates if n <= clip_factor * max(median, 1e-12)]
+            rejected = len(updates) - len(kept)
+        else:
+            kept = [(w, s) for (w, s, _n) in updates]
+
+        if kept:
+            global_weights = weighted_average([k[0] for k in kept], [k[1] for k in kept])
             global_model.set_weights(global_weights)
 
         row = {"round": rnd, "rejected_updates": rejected}
