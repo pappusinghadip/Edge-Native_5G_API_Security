@@ -1,0 +1,14 @@
+server:
+  host: 0.0.0.0
+  port: 8080
+
+client:
+  cpus: "2.0"
+  memory: 2G
+  reservation_cpus: "1.0"
+  reservation_memory: 1G
+
+benchmarks:
+  warmup_runs: 1000
+  timed_runs: 10000
+  ttd_trials: 100

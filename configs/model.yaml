@@ -1,0 +1,77 @@
+random_seed: 42
+
+dataset:
+  label_column: label
+  positive_label: Malicious
+  negative_label: Benign
+  train_ratio: 0.70
+  val_ratio: 0.15
+  test_ratio: 0.15
+  features:
+    - Header_Length
+    - Protocol Type
+    - Time_To_Live
+    - Rate
+    - ack_count
+    - syn_count
+    - Tot sum
+    - AVG
+    - IAT
+    - Number
+
+model:
+  input_shape: [10, 1]
+  num_classes: 2
+  conv_filters: [64, 128, 128]
+  kernel_size: 3
+  dense_units: [256, 128]
+  dropout_rates: [0.4, 0.3]
+  optimizer: adam
+  learning_rate: 0.001
+  momentum: 0.9
+  use_batch_norm: true
+  use_focal_loss: true
+  focal_alpha: 0.95
+  focal_gamma: 3.0
+  label_smoothing: 0.1
+
+training:
+  epochs: 100
+  batch_size: 512
+  class_weighting: none
+  resampling_strategy: none
+  oversampling_target_ratio: 1.0
+  early_stopping:
+    monitor: val_auc
+    mode: max
+    patience: 15
+    restore_best_weights: true
+  reduce_lr:
+    monitor: val_auc
+    mode: max
+    factor: 0.5
+    patience: 5
+    min_lr: 0.00001
+  tensorboard_subdir: centralized
+  checkpoint_name: centralized_best.h5
+  final_model_name: centralized_final.h5
+  training_log_name: centralized_training_log.csv
+
+evaluation:
+  metrics_name: centralized_results.json
+  summary_name: model_summary.txt
+  confusion_matrix_figure: confusion_matrix_centralized.png
+  roc_figure: roc_centralized.png
+  training_curves_figure: training_curves_centralized.png
+  threshold_search:
+    enabled: true
+    min: 0.01
+    max: 0.99
+    steps: 999
+    objective: f1_binary
+
+export:
+  tflite_name: centralized_best.tflite
+  latency_metrics_name: latency_centralized.json
+  warmup_runs: 1000
+  benchmark_runs: 10000

@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "edge-5g-fl-security"
+version = "0.1.0"
+description = "Thesis implementation scaffold for edge-native 5G API security with federated learning."
+readme = "README.md"
+requires-python = ">=3.10,<3.11"
+authors = [
+  { name = "Pappu Singha" }
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-ra"
+
+[tool.setuptools.packages.find]
+include = ["src*"]

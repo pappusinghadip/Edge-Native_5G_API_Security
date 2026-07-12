@@ -1,0 +1,117 @@
+services:
+  fl-server:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.server
+    ports:
+      - "8080:8080"
+    volumes:
+      - ../results:/app/results
+    environment:
+      NUM_ROUNDS: "20"
+      MIN_CLIENTS: "5"
+
+  edge-node-1:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.client
+    depends_on:
+      - fl-server
+    volumes:
+      - ../data/partitions:/app/data/partitions
+      - ../results:/app/results
+    environment:
+      CLIENT_ID: "0"
+      SERVER_ADDRESS: "fl-server:8080"
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2G
+        reservations:
+          cpus: "1.0"
+          memory: 1G
+
+  edge-node-2:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.client
+    depends_on:
+      - fl-server
+    volumes:
+      - ../data/partitions:/app/data/partitions
+      - ../results:/app/results
+    environment:
+      CLIENT_ID: "1"
+      SERVER_ADDRESS: "fl-server:8080"
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2G
+        reservations:
+          cpus: "1.0"
+          memory: 1G
+
+  edge-node-3:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.client
+    depends_on:
+      - fl-server
+    volumes:
+      - ../data/partitions:/app/data/partitions
+      - ../results:/app/results
+    environment:
+      CLIENT_ID: "2"
+      SERVER_ADDRESS: "fl-server:8080"
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2G
+        reservations:
+          cpus: "1.0"
+          memory: 1G
+
+  edge-node-4:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.client
+    depends_on:
+      - fl-server
+    volumes:
+      - ../data/partitions:/app/data/partitions
+      - ../results:/app/results
+    environment:
+      CLIENT_ID: "3"
+      SERVER_ADDRESS: "fl-server:8080"
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2G
+        reservations:
+          cpus: "1.0"
+          memory: 1G
+
+  edge-node-5:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.client
+    depends_on:
+      - fl-server
+    volumes:
+      - ../data/partitions:/app/data/partitions
+      - ../results:/app/results
+    environment:
+      CLIENT_ID: "4"
+      SERVER_ADDRESS: "fl-server:8080"
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2G
+        reservations:
+          cpus: "1.0"
+          memory: 1G

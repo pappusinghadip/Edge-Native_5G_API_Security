@@ -1,0 +1,49 @@
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
+
+# Environments / secrets
+.env
+.env.*
+*.pem
+*.key
+secrets.*
+
+# Data (raw, processed tensors, FL partitions) — keep dir structure only
+data/raw/
+!data/raw/.gitkeep
+data/processed/
+!data/processed/.gitkeep
+data/partitions/
+!data/partitions/.gitkeep
+
+# Results / model artifacts / logs — keep dir structure only
+results/models/
+!results/models/.gitkeep
+results/metrics/
+!results/metrics/.gitkeep
+results/figures/
+!results/figures/.gitkeep
+results/tensorboard/
+!results/tensorboard/.gitkeep
+*.log
+
+# Generated reports / exports
+output/
+
+# Local tooling
+.claude/
+
+# Markdown docs (README, CHANGELOG, reports — excluded per request)
+*.md
