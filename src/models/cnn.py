@@ -23,7 +23,7 @@ MODEL_SPEC = {
 }
 
 
-def focal_loss(alpha: float = 0.75, gamma: float = 2.0) -> Any:
+def focal_loss(alpha: float = 0.75, gamma: float = 2.0, class_weighted: bool = True) -> Any:
     """Create a focal loss function for imbalanced classification.
 
     Focal loss down-weights well-classified examples and focuses training
@@ -33,7 +33,13 @@ def focal_loss(alpha: float = 0.75, gamma: float = 2.0) -> Any:
 
     def _focal_loss(y_true: Any, y_pred: Any) -> Any:
         y_pred = tf.clip_by_value(y_pred, tf.keras.backend.epsilon(), 1.0 - tf.keras.backend.epsilon())
-        alpha_weights = y_true * alpha + (1.0 - y_true) * (1.0 - alpha)
+        if class_weighted:
+            # alpha on the malicious class (column 1), 1 - alpha on benign (column 0)
+            alpha_weights = y_true * tf.constant([1.0 - alpha, alpha], dtype=y_pred.dtype)
+        else:
+            # Pre-round-5 behaviour, kept only to reproduce earlier runs. With one-hot targets
+            # the true-class column always gets alpha, so every example is weighted alike.
+            alpha_weights = y_true * alpha + (1.0 - y_true) * (1.0 - alpha)
         focal_weights = alpha_weights * tf.pow(1.0 - y_pred, gamma)
         cross_entropy = -y_true * tf.math.log(y_pred)
         loss = focal_weights * cross_entropy
@@ -58,6 +64,7 @@ def build_model(
     focal_alpha: float = 0.75,
     focal_gamma: float = 2.0,
     label_smoothing: float = 0.1,
+    focal_class_weighted: bool = True,
 ) -> Any:
     """Build and compile the thesis 1D-CNN with mixed pooling.
 
@@ -100,7 +107,7 @@ def build_model(
     opt = build_optimizer(tf, optimizer=optimizer, learning_rate=learning_rate, momentum=momentum)
 
     if use_focal_loss:
-        loss_fn = focal_loss(alpha=focal_alpha, gamma=focal_gamma)
+        loss_fn = focal_loss(alpha=focal_alpha, gamma=focal_gamma, class_weighted=focal_class_weighted)
     else:
         loss_fn = tf.keras.losses.CategoricalCrossentropy(label_smoothing=label_smoothing)
 
@@ -149,6 +156,7 @@ def build_model_from_config(model_config: dict[str, Any]) -> Any:
         use_focal_loss=bool(cfg.get("use_focal_loss", True)),
         focal_alpha=float(cfg.get("focal_alpha", 0.75)),
         focal_gamma=float(cfg.get("focal_gamma", 2.0)),
+        focal_class_weighted=bool(cfg.get("focal_class_weighted", True)),
         label_smoothing=float(cfg.get("label_smoothing", 0.1)),
     )
 

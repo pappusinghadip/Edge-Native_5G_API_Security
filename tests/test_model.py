@@ -27,6 +27,17 @@ def test_model_builds_with_expected_output_shape() -> None:
     assert summary["layers"]
 
 
+def test_focal_loss_alpha_is_class_dependent() -> None:
+    tf = pytest.importorskip("tensorflow")
+    from src.models.cnn import focal_loss
+    p = tf.constant([[0.5, 0.5]])                       # equal cross-entropy for either label
+    benign, malicious = tf.constant([[1.0, 0.0]]), tf.constant([[0.0, 1.0]])
+    fixed = focal_loss(alpha=0.95, gamma=0.0)
+    assert abs(float(fixed(malicious, p)) / float(fixed(benign, p)) - 0.95 / 0.05) < 1e-3
+    old = focal_loss(alpha=0.95, gamma=0.0, class_weighted=False)   # the pre-round-5 bug
+    assert abs(float(old(malicious, p)) / float(old(benign, p)) - 1.0) < 1e-6
+
+
 def test_oversample_minority_class_balances_binary_labels() -> None:
     X = np.arange(12, dtype=np.float32).reshape(6, 1, 2)
     y = np.array([0, 0, 0, 0, 1, 1], dtype=np.int64)

@@ -124,6 +124,12 @@ def run_real_scenarios(
             detected += 1
             ttds.append(r["ttd_flows"])
     ttd_mean = float(np.mean(ttds)) if ttds else float("nan")
+    # The TTD distribution is right-skewed (a few scenarios need many flows), so the
+    # median is reported alongside the mean rather than the mean alone.
+    ttd_median = float(np.median(ttds)) if ttds else float("nan")
+    # The reviewer asks for three distinct proportions rather than one: a scenario can fail
+    # because the benign prelude triggered a block, or because the attack was never blocked.
+    clean = n_scenarios - false_blocks
     return {
         "policy": {
             "threshold": policy.threshold,
@@ -133,10 +139,21 @@ def run_real_scenarios(
             "cooldown_flows": policy.cooldown_flows,
         },
         "scenarios": n_scenarios,
+        "benign_prefix": benign_prefix,
+        "attack_len": attack_len,
+        "scenario_seed": seed,
+        "false_blocks": false_blocks,
+        "detected_count": detected,
+        "clean_scenarios": clean,
+        # detection among scenarios that survived the benign prelude
+        "conditional_detection_rate": (detected / clean) if clean else float("nan"),
         "detection_rate": detected / n_scenarios,
         "false_block_rate": false_blocks / n_scenarios,
         "ttd_flows_mean": ttd_mean,
+        "ttd_flows_median": ttd_median,
+        "ttd_flows_p90": float(np.percentile(ttds, 90)) if ttds else float("nan"),
         "ttd_ms_mean": ttd_mean * per_flow_latency_ms if ttds else float("nan"),
+        "ttd_ms_median": ttd_median * per_flow_latency_ms if ttds else float("nan"),
         "per_flow_latency_ms": per_flow_latency_ms,
     }
 

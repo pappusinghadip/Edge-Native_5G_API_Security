@@ -51,18 +51,24 @@ class ClientData:
     y: np.ndarray  # integer labels
 
 
-def partition_files(paths_config: dict[str, Any], mode: str, num_clients: int) -> list[Path]:
+def partition_files(paths_config: dict[str, Any], mode: str, num_clients: int,
+                    alpha: float = 0.5) -> list[Path]:
     """Resolve the K partition file paths for the requested mode."""
-    suffix = {"iid": "iid", "dirichlet": "dir_0p5", "non-iid": "dir_0p5"}.get(mode)
-    if suffix is None:
+    if mode == "iid":
+        suffix = "iid"
+    elif mode in ("dirichlet", "non-iid"):
+        # alpha is carried in the filename, so several heterogeneity levels can coexist
+        suffix = f"dir_{str(alpha).replace('.', 'p')}"
+    else:
         raise ValueError(f"Unknown partition mode '{mode}' (use iid or dirichlet)")
     part_dir = resolve_path(paths_config["data"]["partitions"])
     return [part_dir / f"client_{i}_{suffix}.npz" for i in range(num_clients)]
 
 
-def load_clients(paths_config: dict[str, Any], mode: str, num_clients: int) -> list[ClientData]:
+def load_clients(paths_config: dict[str, Any], mode: str, num_clients: int,
+                 alpha: float = 0.5) -> list[ClientData]:
     clients: list[ClientData] = []
-    for i, path in enumerate(partition_files(paths_config, mode, num_clients)):
+    for i, path in enumerate(partition_files(paths_config, mode, num_clients, alpha)):
         X, y, _ = load_processed_split(path)
         clients.append(ClientData(client_id=i, X=X.astype(np.float32), y=y.astype(np.int64)))
     return clients
@@ -97,6 +103,7 @@ def make_model(fl_config: dict[str, Any], model_config: dict[str, Any]) -> Any:
         use_focal_loss=bool(m.get("use_focal_loss", True)),
         focal_alpha=float(m.get("focal_alpha", 0.95)),
         focal_gamma=float(m.get("focal_gamma", 3.0)),
+        focal_class_weighted=bool(m.get("focal_class_weighted", True)),
         label_smoothing=float(m.get("label_smoothing", 0.1)),
     )
 
@@ -188,8 +195,13 @@ def run_fedavg(
     rounds: int,
     poison_clients: int = 0,
     clip: bool = False,
+    fedbn: bool = False,
 ) -> RunResult:
-    """Synchronous FedAvg over K clients for R rounds."""
+    """Synchronous FedAvg over K clients for R rounds.
+
+    fedbn=True keeps every batch-normalisation variable local (FedBN, round-6 sensitivity): each client
+    trains from the averaged non-BN weights plus its own BN weights, and result._client_weights holds each
+    client's final model. The default (False) is plain FedAvg over all variables, as in every other run."""
     fed = fl_config["federation"]
     local_epochs = int(fed["local_epochs"])
     batch = int(fed["local_batch_size"])
@@ -205,18 +217,23 @@ def run_fedavg(
     experiment = "fedavg" if poison_clients == 0 else f"poison{poison_clients}_{'clip' if clip else 'noclip'}"
     result = RunResult(experiment=experiment, mode=mode, rounds=rounds)
     local_model = make_model(fl_config, model_config)  # reused scratch model
+    bn_mask = ["batch_normalization" in v.name for v in global_model.weights]
+    client_w: dict[int, list[np.ndarray]] = {}          # FedBN: each client's own last weights
 
     # SafeFedAvg cutoff: reject an update whose L2 delta-norm exceeds this multiple of
     # the cohort median. A relative cutoff adapts to model scale; a fixed absolute
     # threshold (the old max_grad_norm) rejected honest updates too.
     # A 2.5x-median cutoff drops a 5x sign-flip update while keeping honest peers;
     # retune if the assumed attack scale changes.
-    clip_factor = 2.5
+    clip_factor = float(fl_config.get("clip_factor", 2.5))
 
     for rnd in range(1, rounds + 1):
-        updates: list[tuple[list[np.ndarray], int, float]] = []
+        updates: list[tuple[list[np.ndarray], int, float, int]] = []
         for c in clients:
-            local_model.set_weights(global_weights)
+            start = global_weights
+            if fedbn and c.client_id in client_w:            # shared layers from the server, BN from the client
+                start = [cw if m else g for g, cw, m in zip(global_weights, client_w[c.client_id], bn_mask)]
+            local_model.set_weights(start)
             local_model.fit(
                 c.X,
                 one_hot_encode(c.y, num_classes),
@@ -225,24 +242,35 @@ def run_fedavg(
                 verbose=0,
             )
             w = local_model.get_weights()
+            if fedbn:
+                client_w[c.client_id] = w
             if c.client_id < poison_clients:
                 w = sign_flip(w, global_weights)
-            updates.append((w, len(c.X), update_l2_norm(w, global_weights)))
+            updates.append((w, len(c.X), update_l2_norm(w, global_weights), c.client_id))
 
-        rejected = 0
+        rejected, median, cutoff = 0, None, None
         if clip and len(updates) >= 3:
             norms = sorted(u[2] for u in updates)
             median = norms[len(norms) // 2]
-            kept = [(w, s) for (w, s, n) in updates if n <= clip_factor * max(median, 1e-12)]
+            cutoff = clip_factor * max(median, 1e-12)
+            kept = [(w, s) for (w, s, n, _cid) in updates if n <= cutoff]
             rejected = len(updates) - len(kept)
         else:
-            kept = [(w, s) for (w, s, _n) in updates]
+            kept = [(w, s) for (w, s, _n, _cid) in updates]
+        # One record per client per round, so rejection attribution is measured, not inferred
+        # from per-round counts (round-5 review).
+        decisions = [{"client_id": int(cid), "update_norm": float(n),
+                      "accepted": cutoff is None or n <= cutoff,
+                      "adversarial": bool(cid < poison_clients)} for (_w, _s, n, cid) in updates]
 
         if kept:
             global_weights = weighted_average([k[0] for k in kept], [k[1] for k in kept])
             global_model.set_weights(global_weights)
 
-        row = {"round": rnd, "rejected_updates": rejected}
+        row = {"round": rnd, "rejected_updates": rejected,
+               "median_norm": None if median is None else float(median),
+               "norm_cutoff": None if cutoff is None else float(cutoff),
+               "clients": decisions}
         row.update(evaluate_global(global_model, X_test, y_test, threshold=0.5))
         result.history.append(row)
         LOGGER.info(
@@ -257,6 +285,9 @@ def run_fedavg(
     result.final["experiment"] = experiment
     result.final["mode"] = mode
     result._model = global_model  # type: ignore[attr-defined]
+    if fedbn:                                            # each client's deployable model: shared layers + own BN
+        result._client_weights = {cid: [cw if m else g for g, cw, m in zip(global_weights, w, bn_mask)]  # type: ignore[attr-defined]
+                                  for cid, w in client_w.items()}
     return result
 
 
@@ -278,16 +309,26 @@ def run_isolated(
     X_val, y_val = global_splits["val"]
 
     result = RunResult(experiment="isolated", mode=mode, rounds=rounds)
+    # The isolated arm has no global model, so save_result's _model path never fires and
+    # nothing recoverable is written. Keep each client's test-set scores and weights, so
+    # curves, thresholds and intervals for this baseline never need a retrain.
+    client_probs: list[np.ndarray] = []
+    client_models: list[Any] = []
     for c in clients:
         model = make_model(fl_config, model_config)
         model.fit(c.X, one_hot_encode(c.y, num_classes), epochs=total_epochs, batch_size=batch, verbose=0)
         t = best_threshold(model, X_val, y_val)
         metrics = evaluate_global(model, X_test, y_test, threshold=t)
+        client_probs.append(model.predict(X_test, batch_size=1024, verbose=0)[:, 1])
+        client_models.append(model)
         metrics["client_id"] = c.client_id
         metrics["train_samples"] = int(len(c.X))
         metrics["train_malicious"] = int(np.sum(c.y == 1))
         result.per_client.append(metrics)
         LOGGER.info("[isolated/%s] client %d  auc=%.4f f1=%.4f", mode, c.client_id, metrics["auc_roc"], metrics["f1_binary"])
+
+    result._client_probs = np.stack(client_probs)   # type: ignore[attr-defined]
+    result._client_models = client_models           # type: ignore[attr-defined]
 
     # Aggregate: mean of per-client global-test metrics
     keys = ["accuracy", "auc_roc", "f1_binary", "recall_binary", "false_positive_rate"]
@@ -300,27 +341,47 @@ def run_isolated(
 # --------------------------------------------------------------------------- #
 # Persistence
 # --------------------------------------------------------------------------- #
-def save_result(result: RunResult, paths_config: dict[str, Any]) -> Path:
+def save_result(
+    result: RunResult,
+    paths_config: dict[str, Any],
+    suffix: str = "",
+    seed: int | None = None,
+    test_probs: np.ndarray | None = None,
+) -> Path:
     metrics_dir = resolve_path(paths_config["results"]["metrics"])
     models_dir = resolve_path(paths_config["results"]["models"])
     metrics_dir.mkdir(parents=True, exist_ok=True)
     models_dir.mkdir(parents=True, exist_ok=True)
 
-    tag = f"fl_{result.experiment}_{result.mode}"
+    tag = f"fl_{result.experiment}_{result.mode}{suffix}"
     out = metrics_dir / f"{tag}.json"
     payload = {
         "experiment": result.experiment,
         "mode": result.mode,
         "rounds": result.rounds,
+        "seed": seed,
         "history": result.history,
         "final": result.final,
         "per_client": result.per_client,
     }
     out.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
+    # Test-set scores are kept so PR curves, confusion matrices, threshold sweeps and
+    # time-to-detect can all be recomputed later without retraining.
+    if test_probs is not None:
+        np.savez_compressed(metrics_dir / f"{tag}_probs.npz", probs=test_probs.astype(np.float32))
+
     model = getattr(result, "_model", None)
     if model is not None:
         model.save(models_dir / f"{tag}_global.h5")
+
+    # isolated arm: one set of scores and one model per client, no global model
+    client_probs = getattr(result, "_client_probs", None)
+    if client_probs is not None:
+        np.savez_compressed(metrics_dir / f"{tag}_client_probs.npz",
+                            probs=np.asarray(client_probs, dtype=np.float32))
+    for i, m in enumerate(getattr(result, "_client_models", []) or []):
+        m.save(models_dir / f"{tag}_client{i}.h5")
     LOGGER.info("Saved %s", out)
     return out
 
@@ -336,8 +397,18 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--mode", default="iid", choices=["iid", "dirichlet"])
     parser.add_argument("--experiment", default="fedavg", choices=["fedavg", "isolated", "poison"])
     parser.add_argument("--rounds", type=int, default=None, help="Override num_rounds")
+    parser.add_argument("--local-epochs", type=int, default=None, help="Override local epochs per round")
+    parser.add_argument("--batch", type=int, default=None, help="Override local batch size")
+    parser.add_argument("--lr", type=float, default=None, help="Override local learning rate")
     parser.add_argument("--poison-clients", type=int, default=1, help="Malicious clients (poison experiment)")
     parser.add_argument("--clip", action="store_true", help="Enable SafeFedAvg gradient-norm clipping")
+    parser.add_argument("--clip-factor", type=float, default=None,
+                        help="Norm-filter multiplier kappa (default 2.5)")
+    parser.add_argument("--alpha", type=float, default=None,
+                        help="Dirichlet concentration for --mode dirichlet (default 0.5)")
+    parser.add_argument("--seed", type=int, default=None, help="Override random seed (for repeated runs)")
+    parser.add_argument("--tag", default=None, help="Suffix appended to the output filename")
+    parser.add_argument("--clients", type=int, default=None, help="Override number of clients (scalability study)")
     parser.add_argument("--smoke", action="store_true", help="1-round self-check on tiny subsets")
     return parser
 
@@ -350,12 +421,26 @@ def main() -> None:
     fl_config = load_yaml(args.config)
     model_config = load_yaml(args.model)
     paths_config = load_yaml(args.paths)
-    set_global_seed(int(fl_config.get("random_seed", 42)))
+    seed = int(args.seed if args.seed is not None else fl_config.get("random_seed", 42))
+    set_global_seed(seed)
 
+    if args.local_epochs is not None:
+        fl_config["federation"]["local_epochs"] = args.local_epochs
+    if args.batch is not None:
+        fl_config["federation"]["local_batch_size"] = args.batch
+    if args.lr is not None:
+        fl_config["federation"]["learning_rate"] = args.lr
+
+    if args.clients is not None:
+        fl_config["federation"]["num_clients"] = args.clients
+    if args.clip_factor is not None:
+        fl_config["clip_factor"] = args.clip_factor
+    alpha = float(args.alpha if args.alpha is not None
+                  else fl_config.get("partitioning", {}).get("dirichlet_alpha", 0.5))
     num_clients = int(fl_config["federation"]["num_clients"])
     rounds = int(args.rounds if args.rounds is not None else fl_config["federation"]["num_rounds"])
 
-    clients = load_clients(paths_config, args.mode, num_clients)
+    clients = load_clients(paths_config, args.mode, num_clients, alpha)
     global_splits = load_global_splits(paths_config)
 
     if args.smoke:
@@ -373,7 +458,11 @@ def main() -> None:
     else:
         result = run_fedavg(clients, global_splits, fl_config, model_config, args.mode, rounds)
 
-    save_result(result, paths_config)
+    probs = None
+    model = getattr(result, "_model", None)
+    if model is not None:
+        probs = model.predict(global_splits["test"][0], batch_size=1024, verbose=0)[:, 1]
+    save_result(result, paths_config, suffix=(f"_{args.tag}" if args.tag else ""), seed=seed, test_probs=probs)
 
     if args.smoke:
         assert result.final, "final metrics missing"

@@ -7,9 +7,11 @@ dataset:
   train_ratio: 0.70
   val_ratio: 0.15
   test_ratio: 0.15
+  # round-6 sensitivity: "Number" dropped (constant at 10 in 99.9% of rows), "Protocol Type" one-hot
+  # encoded into proto_0, proto_1, proto_6, proto_17, exact duplicates removed before the split
+  # (scripts/preprocess_clean.py). These configs are used only by the cleaned-data reruns.
   features:
     - Header_Length
-    - Protocol Type
     - Time_To_Live
     - Rate
     - ack_count
@@ -17,10 +19,13 @@ dataset:
     - Tot sum
     - AVG
     - IAT
-    - Number
+    - proto_0
+    - proto_1
+    - proto_6
+    - proto_17
 
 model:
-  input_shape: [10, 1]
+  input_shape: [12, 1]
   num_classes: 2
   conv_filters: [64, 128, 128]
   kernel_size: 3

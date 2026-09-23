@@ -26,13 +26,13 @@ def arrow(y1, y2, x=5.0, color=NAVY, label=None, lx=None):
 # Vertical pipeline
 box(14.0, "Incoming API flow\n(request rate, inter-arrival, retries, flags)", color=NAVY, fill="#FFFFFF")
 arrow(13.42, 12.75)
-box(12.15, "Detection  —  1D-CNN / CNN+GBM ensemble\noutputs a malicious probability (risk score)", color=STEP)
+box(12.15, "Detection: 1D-CNN (TFLite, on-node)\noutputs a malicious probability (risk score)", color=STEP)
 arrow(11.57, 10.9)
-box(10.3, "Policy engine  —  k-of-n sliding window\n(block when ≥ 3 of the last 10 flows are flagged)", color=STEP)
+box(10.3, "Policy engine: k-of-n sliding window over\nthe monitored identity (account, client ID, token)\nblock when k of the last n flows are flagged; k = 3, n = 10", color=STEP)
 arrow(9.72, 9.05, label="sustained\nevidence")
-box(8.45, "Enforcement  —  rate-limit / temporary block\non the offending source", color=ACT, fill="#FBEAEA")
+box(8.45, "Enforcement: rate-limit / temporary block\non the offending source", color=ACT, fill="#FBEAEA")
 arrow(7.87, 7.2)
-box(6.6, "Recovery timer  —  auto-release after a\ncooldown window (no permanent lockout)", color=STEP)
+box(6.6, "Recovery timer: auto-release after a\ncooldown window (no permanent lockout)", color=STEP)
 
 # "allow" side branch from the policy engine
 ax.add_patch(FancyArrowPatch((7.6, 10.3), (9.0, 10.3), arrowstyle="-|>", mutation_scale=14,
@@ -43,7 +43,8 @@ ax.text(9.05, 10.3, "below\nthreshold\n→ allow", fontsize=8.2, color=OK, ha="l
 loop = FancyArrowPatch((2.4, 6.6), (2.4, 14.0), connectionstyle="arc3,rad=-0.45",
                        arrowstyle="-|>", mutation_scale=15, linewidth=1.4, color="#888888", linestyle="--")
 ax.add_patch(loop)
-ax.text(0.75, 10.3, "resume\nmonitoring", fontsize=8.2, color="#888888", ha="center", va="center", rotation=90)
+ax.text(0.8, 10.3, "resume monitoring", fontsize=8.2, color="#888888",
+        ha="center", va="center", rotation=90)
 
 ax.set_title("Detection-to-mitigation pipeline (edge node)", fontsize=12, color=NAVY, weight="bold", pad=6)
 fig.tight_layout()

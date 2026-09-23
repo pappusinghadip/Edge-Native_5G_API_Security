@@ -26,7 +26,9 @@ from src.models.io import load_processed_split, one_hot_encode
 from src.utils.config import load_yaml, resolve_path
 from src.utils.seed import set_global_seed
 
-MODEL_BYTES = 697_864
+# The measured serialized update (np.savez of every model variable), not the raw tensor size
+# (697,864 bytes): one payload definition throughout, as the round-5 review asks.
+MODEL_BYTES = json.loads(Path("results/metrics/measured_communication.json").read_text())["model"]["serialized_float32_bytes"]
 
 
 def iid_partition(n: int, k: int, seed: int) -> list[np.ndarray]:
@@ -38,12 +40,15 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--clients", type=int, required=True)
     ap.add_argument("--rounds", type=int, default=5)
+    ap.add_argument("--seed", type=int, default=42,
+                    help="Seed for partitioning and training; records are keyed on "
+                         "(clients, rounds, seed) so repeats do not overwrite each other")
     args = ap.parse_args()
 
     fl_cfg = load_yaml("configs/fl.yaml")
     model_cfg = load_yaml("configs/model.yaml")
     paths_cfg = load_yaml("configs/paths.yaml")
-    set_global_seed(42)
+    set_global_seed(args.seed)
 
     k, rounds = args.clients, args.rounds
     local_epochs = int(fl_cfg["federation"]["local_epochs"])
@@ -54,7 +59,7 @@ def main() -> None:
     X_train, y_train, _ = load_processed_split(processed / "train.npz")
     X_val, y_val, _ = load_processed_split(processed / "val.npz")
     X_test, y_test, _ = load_processed_split(processed / "test.npz")
-    shards = iid_partition(len(X_train), k, seed=42)
+    shards = iid_partition(len(X_train), k, seed=args.seed)
 
     global_model = make_model(fl_cfg, model_cfg)
     gw = global_model.get_weights()
@@ -82,6 +87,7 @@ def main() -> None:
 
     record = {
         "clients": k,
+        "seed": args.seed,
         "rounds": rounds,
         "mean_round_seconds": round(float(np.mean(round_times)), 2),
         "final_auc": round(float(final["auc_roc"]), 4),
@@ -91,8 +97,10 @@ def main() -> None:
 
     out = Path("results/metrics/scalability.json")
     data = json.loads(out.read_text()) if out.exists() else []
-    data = [d for d in data if d["clients"] != k] + [record]  # replace same-K
-    data.sort(key=lambda d: d["clients"])
+    key = (k, args.rounds, args.seed)
+    data = [d for d in data
+            if (d["clients"], d.get("rounds"), d.get("seed", 42)) != key] + [record]
+    data.sort(key=lambda d: (d["clients"], d.get("rounds", 0), d.get("seed", 42)))
     out.write_text(json.dumps(data, indent=2), encoding="utf-8")
     print("recorded:", json.dumps(record))
 

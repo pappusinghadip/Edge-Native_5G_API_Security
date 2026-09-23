@@ -1,0 +1,16 @@
+project_root: .
+data:
+  root: data
+  raw: data/raw
+  processed: data/processed_nottl
+  partitions: data/partitions_nottl
+results:
+  root: results
+  figures: results/figures/nottl
+  metrics: results/metrics
+  models: results/models
+  tensorboard: results/tensorboard
+notebooks:
+  root: notebooks
+docker:
+  compose_file: docker/compose.yaml

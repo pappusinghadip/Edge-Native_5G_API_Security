@@ -10,6 +10,7 @@ Run: python -m scripts.communication_analysis   (or python scripts/communication
 from __future__ import annotations
 
 import json
+import pathlib
 import os
 import tempfile
 from pathlib import Path
@@ -25,7 +26,16 @@ ROOT = Path(__file__).resolve().parents[1]
 METRICS = ROOT / "results" / "metrics"
 FIGURES = ROOT / "results" / "figures"
 
-MODEL_BYTES = 697_864          # measured float32 weight size of the 1D-CNN
+# Measured float32 weight size of the 1D-CNN. Taken from measured_communication.json when that
+# has been produced, so this script and the measured figures cannot drift apart.
+def _model_bytes() -> int:
+    p = pathlib.Path("results/metrics/measured_communication.json")
+    if p.exists():
+        return int(json.loads(p.read_text())["model"]["serialized_float32_bytes"])
+    return 697_864
+
+
+MODEL_BYTES = _model_bytes()
 TRAIN_ROWS = 777_833           # processed training rows
 FEATURES = 10
 

@@ -198,6 +198,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", required=True, help="Path to configs/fl.yaml")
     parser.add_argument("--paths", required=True, help="Path to configs/paths.yaml")
+    parser.add_argument("--alpha", type=float, default=None,
+                        help="Dirichlet concentration; overrides the value in the config so that "
+                             "several heterogeneity levels can be generated")
     return parser
 
 
@@ -206,6 +209,8 @@ def main() -> None:
     args = build_parser().parse_args()
     fl_config = load_yaml(args.config)
     paths_config = load_yaml(args.paths)
+    if args.alpha is not None:
+        fl_config.setdefault("partitioning", {})["dirichlet_alpha"] = args.alpha
     manifest = generate_partitions(fl_config, paths_config)
     LOGGER.info("Saved IID partitions: %d", len(manifest["iid_files"]))
     LOGGER.info("Saved Dirichlet partitions: %d", len(manifest["dirichlet_files"]))
