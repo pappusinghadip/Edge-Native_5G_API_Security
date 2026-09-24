@@ -43,7 +43,8 @@ out = {"criteria": "Pareto on detection (up) and false-block rate (down); TTE sh
 (M / "policy_pareto.json").write_text(json.dumps(out, indent=2), encoding="utf-8")
 
 fig, ax = plt.subplots(figsize=(7.6, 5.0))
-ZOOM = (-0.004, 0.036, 0.86, 1.005)          # the crowded corner, drawn again as an inset
+ZOOM = (-0.004, 0.036, 0.845, 1.008)         # the crowded corner, drawn again as an inset
+NUDGE = {(3, 5): (8, 3), (4, 10): (8, -10), (3, 20): (8, 4), (2, 20): (-62, 7)}   # label offsets for points that sit close together
 
 
 def draw(axis, label_all):
@@ -56,7 +57,7 @@ def draw(axis, label_all):
         inside = ZOOM[0] <= g["false_block_rate"] <= ZOOM[1] and ZOOM[2] <= g["detection_rate"] <= ZOOM[3]
         if label_all or not inside:
             axis.annotate(f"k={g['k']}, n={g['n']}", (g["false_block_rate"], g["detection_rate"]),
-                          textcoords="offset points", xytext=(8, -3), fontsize=7.5,
+                          textcoords="offset points", xytext=NUDGE.get((g["k"], g["n"]), (8, -3)), fontsize=8.5,
                           color="#B23A3A" if chosen else "#333333", fontweight="bold" if chosen else "normal")
 
 
@@ -66,12 +67,12 @@ ax.add_patch(plt.Rectangle((ZOOM[0], ZOOM[2]), ZOOM[1] - ZOOM[0], ZOOM[3] - ZOOM
 ax.set_xlabel("false-block rate (benign prelude)"); ax.set_ylabel("detection rate (complete scenario success)")
 ax.set_title("k-of-n policy on the deployed model: filled = Pareto-optimal on detection and false blocks;\n"
              "marker area grows with median time to enforcement; red outline = setting used throughout",
-             color="#14315C", fontsize=9)
+             color="#14315C", fontsize=10)
 ax.grid(alpha=0.25)
 ins = ax.inset_axes([0.27, 0.06, 0.44, 0.40])      # the empty lower-middle region
 draw(ins, label_all=True)
 ins.set_xlim(ZOOM[0], ZOOM[1]); ins.set_ylim(ZOOM[2], ZOOM[3])
-ins.tick_params(labelsize=7); ins.grid(alpha=0.25)
-ins.set_title("detail of the dashed box", fontsize=7.5, color="#666666")
+ins.tick_params(labelsize=8); ins.set_xticks([0, 0.01, 0.02, 0.03]); ins.grid(alpha=0.25)
+ins.set_title("detail of the dashed box", fontsize=8.5, color="#666666")
 fig.tight_layout(); fig.savefig(F / "policy_pareto.png", dpi=300); plt.close(fig)
 print("pareto-optimal:", [(g["k"], g["n"]) for g in grid if g["pareto"]], "winners:", winners)

@@ -19,7 +19,7 @@ from pathlib import Path
 os.environ.setdefault("MPLCONFIGDIR", tempfile.gettempdir())
 import matplotlib  # noqa: E402
 matplotlib.use("Agg")
-matplotlib.rcParams["svg.fonttype"] = "none"     # keep text as text, so it stays searchable and editable
+matplotlib.rcParams["svg.fonttype"] = "path"     # text as outlines: Word lacks the plotting font and would substitute a wider one
 from matplotlib.figure import Figure  # noqa: E402
 
 FIG, MET = Path("results/figures"), Path("results/metrics")
