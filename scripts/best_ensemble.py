@@ -8,11 +8,16 @@ detector under the current single-attack subset and forms the culmination of the
 baseline comparison requested in review.
 
 Run: python -m scripts.best_ensemble
+     python -m scripts.best_ensemble --cnn-probs results/metrics/repeated_centralized_r7ens_e60_s102_seed102_probs.npz
+--cnn-probs takes the 1D-CNN's validation and test scores from a saved run (round-7 review: the ensembles must use
+the corrected-loss CNN) instead of loading the checkpoint. Threads follow OMP_NUM_THREADS.
 """
 
 from __future__ import annotations
 
+import argparse
 import json
+import os
 from pathlib import Path
 
 import numpy as np
@@ -30,6 +35,10 @@ from src.utils.seed import set_global_seed
 
 
 def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--cnn-probs", default=None, help="npz with val_probs and probs of a saved 1D-CNN run")
+    args = ap.parse_args()
+    nj = int(os.environ.get("OMP_NUM_THREADS", "-1"))
     set_global_seed(42)
     paths_cfg = load_yaml("configs/paths.yaml")
     model_cfg = load_yaml("configs/model.yaml")
@@ -44,18 +53,23 @@ def main() -> None:
     # --- Base models: validation + test probabilities ---
     val_p, test_p = {}, {}
 
-    import tensorflow as tf
-    from src.models.cnn import focal_loss
-    cnn = tf.keras.models.load_model(models_dir / model_cfg["training"]["checkpoint_name"],
-                                     custom_objects={"focal_loss": focal_loss()})
-    val_p["1D-CNN"] = cnn.predict(X_va, batch_size=1024, verbose=0)[:, 1]
-    test_p["1D-CNN"] = cnn.predict(X_te, batch_size=1024, verbose=0)[:, 1]
+    if args.cnn_probs:
+        z = np.load(args.cnn_probs)
+        assert len(z["val_probs"]) == len(y_va) and len(z["probs"]) == len(y_te)
+        val_p["1D-CNN"], test_p["1D-CNN"] = z["val_probs"].astype(float), z["probs"].astype(float)
+    else:
+        import tensorflow as tf
+        from src.models.cnn import focal_loss
+        cnn = tf.keras.models.load_model(models_dir / model_cfg["training"]["checkpoint_name"],
+                                         custom_objects={"focal_loss": focal_loss()})
+        val_p["1D-CNN"] = cnn.predict(X_va, batch_size=1024, verbose=0)[:, 1]
+        test_p["1D-CNN"] = cnn.predict(X_te, batch_size=1024, verbose=0)[:, 1]
 
     for name, clf in {
         "XGBoost": XGBClassifier(n_estimators=400, max_depth=6, learning_rate=0.08, subsample=0.9,
-                                 n_jobs=-1, eval_metric="logloss", random_state=42),
+                                 n_jobs=nj, eval_metric="logloss", random_state=42),
         "Gradient Boosting": HistGradientBoostingClassifier(max_iter=300, learning_rate=0.1, random_state=42),
-        "Random Forest": RandomForestClassifier(n_estimators=300, n_jobs=-1, random_state=42),
+        "Random Forest": RandomForestClassifier(n_estimators=300, n_jobs=nj, random_state=42),
         "MLP": MLPClassifier(hidden_layer_sizes=(64, 32), max_iter=60, early_stopping=True, random_state=42),
     }.items():
         clf.fit(Ftr, y_tr)
@@ -67,7 +81,8 @@ def main() -> None:
     Tp = np.column_stack([test_p[n] for n in names])
 
     # --- Base model metrics ---
-    results = {"base_models": [], "ensembles": []}
+    results = {"base_models": [], "ensembles": [],
+               "cnn_input": args.cnn_probs or str(models_dir / model_cfg["training"]["checkpoint_name"])}
     for n in names:
         results["base_models"].append(scored_metrics(n, y_te, test_p[n], best_threshold(y_va, val_p[n])))
 

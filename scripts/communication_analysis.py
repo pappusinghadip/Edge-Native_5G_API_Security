@@ -115,14 +115,14 @@ def main() -> None:
     crossover = fl_per_node_per_day_mb
 
     fig, ax = plt.subplots(figsize=(7, 4.6))
-    ax.loglog(traffic_mb, centralized_line, label="Centralized (ship raw traffic)", color="#B23A3A")
-    ax.loglog(traffic_mb, fl_line, label=f"Federated (weights only, {fl_per_node_per_day_mb:.0f} MB/day)", color="#14315C")
+    ax.loglog(traffic_mb, centralized_line, label="Centralized (ship raw traffic)", color="#B23A3A", ls="--", lw=1.8)
+    ax.loglog(traffic_mb, fl_line, label=f"Federated (weights only, {fl_per_node_per_day_mb:.0f} MB/day)", color="#14315C", ls="-", lw=2.0)
     ax.axvline(crossover, ls=":", color="gray")
-    ax.annotate("crossover", (crossover, crossover), textcoords="offset points", xytext=(6, 6), fontsize=8, color="gray")
+    ax.annotate("crossover", (crossover, crossover), textcoords="offset points", xytext=(6, 6), fontsize=9, color="#555555")
     ax.set_xlabel("Daily flow traffic per edge node (MB, log scale)")
     ax.set_ylabel("Data transferred per node per day (MB, log)")
-    ax.set_title("Communication cost: Federated vs Centralized")
-    ax.legend(fontsize=8, loc="upper left")
+    ax.set_title("Communication cost: federated against centralized")
+    ax.legend(fontsize=9, loc="upper left")
     ax.grid(alpha=0.3, which="both")
     fig.tight_layout()
     fig_path = FIGURES / "communication_overhead.png"

@@ -85,6 +85,8 @@ def run_centralized(model_config: dict, splits: dict, seed: int,
     t = best_threshold(model, X_val, y_val)
     metrics = evaluate_global(model, X_test, y_test, threshold=t)
     probs = model.predict(X_test, batch_size=1024, verbose=0)[:, 1]
+    # validation scores are kept too, so the ensembles can be refitted on a corrected-loss CNN
+    metrics["_val_probs"] = model.predict(X_val, batch_size=1024, verbose=0)[:, 1]
     done = len(hist.history.get("loss", []))
     # exposure = training records seen, the quantity the round-5 review asks to be matched
     metrics.update({"epochs_completed": done, "early_stopping": early_stopping,
@@ -93,9 +95,10 @@ def run_centralized(model_config: dict, splits: dict, seed: int,
 
 
 def run_federated(fl_config: dict, model_config: dict, paths_config: dict,
-                  splits: dict, seed: int, rounds: int, mode: str) -> tuple[dict, np.ndarray]:
+                  splits: dict, seed: int, rounds: int, mode: str,
+                  alpha: float = 0.5) -> tuple[dict, np.ndarray]:
     set_global_seed(seed)
-    clients = load_clients(paths_config, mode, int(fl_config["federation"]["num_clients"]))
+    clients = load_clients(paths_config, mode, int(fl_config["federation"]["num_clients"]), alpha)
     gs = {"val": splits["val"], "test": splits["test"]}
     res = run_fedavg(clients, gs, fl_config, model_config, mode, rounds)
     model = getattr(res, "_model")
@@ -114,6 +117,7 @@ def main() -> None:
     ap.add_argument("--seeds", type=int, nargs="+", default=[101, 102, 103, 104, 105])
     ap.add_argument("--rounds", type=int, default=20)
     ap.add_argument("--mode", default="iid", choices=["iid", "dirichlet"])
+    ap.add_argument("--alpha", type=float, default=0.5, help="Dirichlet concentration of the partition to load")
     ap.add_argument("--epochs", type=int, default=None, help="Cap centralized epochs (compute budget)")
     ap.add_argument("--patience", type=int, default=None, help="Override early-stopping patience")
     ap.add_argument("--suffix", default="", help="Extra tag for the output filename")
@@ -146,14 +150,16 @@ def main() -> None:
                                        early_stopping=not args.no_early_stopping)
         else:
             m, probs = run_federated(fl_config, model_config, paths_config, splits,
-                                     seed, args.rounds, args.mode)
+                                     seed, args.rounds, args.mode, args.alpha)
+        val_probs = m.pop("_val_probs", None)
         m["seed"] = seed
         m["wall_seconds"] = round(time.time() - t0, 1)
         m["epochs_cap"] = args.epochs
         m["focal_class_weighted"] = bool(model_config["model"].get("focal_class_weighted", True))
         runs.append(m)
+        extra = {} if val_probs is None else {"val_probs": val_probs.astype(np.float32)}
         np.savez_compressed(metrics_dir / f"repeated_{tag}_seed{seed}_probs.npz",
-                            probs=probs.astype(np.float32))
+                            probs=probs.astype(np.float32), **extra)
         print(f"[{tag}] seed={seed} auc={m['auc_roc']:.4f} f1={m['f1_binary']:.4f} "
               f"fpr={m['false_positive_rate']:.4f} ({m['wall_seconds']}s)", flush=True)
         # written after every seed so a long sweep is never lost to an interruption
