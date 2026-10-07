@@ -4,13 +4,16 @@
           assumption that neighbouring inputs are related matters for this arbitrary tabular order
   nottl   Time_To_Live removed (nine features); XGBoost ranks it second, and a TTL value may describe the
           capture set-up more than the attack, so this asks how much the CNN leans on it
+  nocap   Time_To_Live and Header_Length removed (eight features), round-8 review: both header fields can
+          reflect the sending host and capture set-up more than the attack
 
 Both are built from data/processed (same rows, split and scaling), with matching configs_<variant>/.
-Run: PYTHONPATH=. .venv/bin/python scripts/make_feature_variants.py
+Run: PYTHONPATH=. .venv/bin/python scripts/make_feature_variants.py [variant ...]   (default: all)
 """
 from __future__ import annotations
 
 import shutil
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -19,9 +22,12 @@ import yaml
 SRC, FEATS = Path("data/processed"), yaml.safe_load(open("configs/model.yaml"))["dataset"]["features"]
 perm = np.random.default_rng(0).permutation(len(FEATS))
 assert (perm != np.arange(len(FEATS))).any()
-VARIANTS = {"perm": list(perm), "nottl": [i for i, f in enumerate(FEATS) if f != "Time_To_Live"]}
+VARIANTS = {"perm": list(perm), "nottl": [i for i, f in enumerate(FEATS) if f != "Time_To_Live"],
+            "nocap": [i for i, f in enumerate(FEATS) if f not in ("Time_To_Live", "Header_Length")]}
 
 for name, cols in VARIANTS.items():
+    if sys.argv[1:] and name not in sys.argv[1:]:
+        continue
     out = Path(f"data/processed_{name}"); out.mkdir(parents=True, exist_ok=True)
     for split in ("train", "val", "test"):
         d = np.load(SRC / f"{split}.npz")

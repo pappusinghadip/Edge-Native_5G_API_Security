@@ -1,0 +1,19 @@
+random_seed: 42
+
+federation:
+  num_rounds: 20
+  num_clients: 5
+  fraction_fit: 1.0
+  fraction_evaluate: 1.0
+  min_fit_clients: 5
+  min_evaluate_clients: 5
+  min_available_clients: 5
+  local_epochs: 3
+  local_batch_size: 256
+  learning_rate: 0.01
+  strategy: safe_fedavg
+  max_grad_norm: 10.0
+
+partitioning:
+  default_mode: iid
+  dirichlet_alpha: 0.5
