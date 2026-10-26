@@ -6,6 +6,7 @@ time_to_live   Mac, 20N, seeds 101-103. Centralized runs from step 5 (r6feat) an
                upper bound used for non-inferiority.
 capture_sensitive  Mac, 20N, seeds 101-103 (round 8): the 1D-CNN without Time_To_Live and Header_Length,
                centralized and federated, paired by seed with the original and with the no-Time_To_Live runs.
+partition_draws_pc  PC, 60N (round 9): draws 42, 342 and 442 at alpha 0.1 over seeds 101-103.
 per_client     PC, 60N, the saved test scores of the non-IID FedAvg arms (seeds 101-105). Each client gets a
                held-out set drawn from the test split with its own training label mix: for every class, the test
                records of that class are shuffled (seed 42) and divided among the clients in the proportions the
@@ -179,6 +180,19 @@ for alpha in ("0.1", "0.5"):
                             "auc_min": float(au.min()), "auc_max": float(au.max()),
                             "collapsed": [r["draw"] for r in rows if r["collapsed"]]}
 out["partition_draws"] = pdr
+
+# --- round 9: the alpha = 0.1 thesis draw and the two collapsed draws over seeds 101-103 on the PC ---
+R9 = Path("results/metrics_PC_run_2026-10-26_round9")
+if R9.exists():
+    pc9 = {"platform": "PC", "exposure": "60N", "alpha": 0.1, "seeds": SEEDS3, "draws": {}}
+    for d in (42, 342, 442):
+        a_ = np.array([json.loads((R9 / f"repeated_federated_dirichlet_r9draw{d}_a0p1_pc_s{s}.json").read_text())
+                       ["runs"][0]["auc_roc"] for s in SEEDS3])
+        f_ = [json.loads((R9 / f"repeated_federated_dirichlet_r9draw{d}_a0p1_pc_s{s}.json").read_text())
+              ["runs"][0]["f1_binary"] for s in SEEDS3]
+        pc9["draws"][str(d)] = {"auc_per_seed": a_.tolist(), "auc_mean": float(a_.mean()), "auc_std": float(a_.std(ddof=1)),
+                                "auc_min": float(a_.min()), "auc_max": float(a_.max()), "f1_mean": float(np.mean(f_))}
+    out["partition_draws_pc"] = pc9
 
 (M / "round7_analysis.json").write_text(json.dumps(out, indent=1))
 print(json.dumps({k: v for k, v in ttl.items() if k != "arms"}, indent=1))

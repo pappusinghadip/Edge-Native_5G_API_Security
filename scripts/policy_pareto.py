@@ -64,8 +64,8 @@ def draw(axis, label_all):
 draw(ax, label_all=False)
 ax.add_patch(plt.Rectangle((ZOOM[0], ZOOM[2]), ZOOM[1] - ZOOM[0], ZOOM[3] - ZOOM[2], fill=False,
                            edgecolor="#999999", linestyle="--", linewidth=0.8))
-ax.set_xlabel("false-block rate (benign prelude)"); ax.set_ylabel("detection rate (complete scenario success)")
-ax.set_title("k-of-n policy on the deployed model: filled = Pareto-optimal on detection and false blocks;\n"
+ax.set_xlabel("false-block rate (benign prelude)"); ax.set_ylabel("scenario success rate")
+ax.set_title("k-of-n policy on the deployed model: filled = Pareto-optimal on scenario success and false blocks;\n"
              "marker area grows with median time to enforcement; red outline = setting used throughout",
              color="#14315C", fontsize=10)
 ax.grid(alpha=0.25)
